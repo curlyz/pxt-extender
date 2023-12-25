@@ -1,0 +1,248 @@
+#include <Arduino.h>
+#include <ArduinoJson.h>
+
+StaticJsonDocument<20> packages;
+StaticJsonDocument<20> result;
+
+const uint8_t pina[] = {
+    PIN_PC5,
+    PIN_PC4,
+    PIN_PC3,
+    PIN_PC2,
+    PIN_PC1,
+    PIN_PC0,
+};
+
+const uint8_t pind[] = {
+    PIN_PD4,
+    PIN_PD3,
+    PIN_PD2,
+    PIN_PB0,
+    PIN_PD7,
+    PIN_PD6,
+};
+
+enum ChannelModuleType {
+  Idle = 0x00,
+  Servo = 0x01,
+};
+
+// uint8_t channelFunction[6];
+// uint8_t channelSubscribedId[6];
+// uint16_t channelParam1[6];
+// uint16_t channelParam2[6];
+
+//* Servo Routine - update the servo in background
+// servo_EnableMask is a bit mask that will be used to enable the servo
+uint8_t servo_enableMask = 0x00;
+uint16_t servo_pulseDuration[6];      // this will store the pulse duration for each servo
+unsigned long servo_lastUpdate[6];
+unsigned long servo_updateInterval = 50;      // 50ms
+void servo_MainRoutine() {
+  for (uint8_t channelId = 0; channelId < 6; channelId++) {
+    if (!bitRead(servo_enableMask, channelId)) {
+      return;
+    }
+    if (millis() - servo_lastUpdate[channelId] > servo_updateInterval) {
+      pinMode(pind[channelId], OUTPUT);
+      digitalWrite(pind[channelId], HIGH);
+      delayMicroseconds(servo_pulseDuration[channelId]);
+      digitalWrite(pind[channelId], LOW);
+      servo_lastUpdate[channelId] = millis();
+    }
+  }
+}
+
+//* Attaching Interrupt Routine - Send update on pin change
+/*
+  if a channel is enabled, each time it change the state, a package will be sent back
+  to save memory space, the interrupt_lastState is used to store the last state of the 6 channel
+
+  if either pina or pind channel is changed, this event will trigger
+  the data sent back is 1 byte, with 2 bit of data
+*/
+uint8_t interrupt_enableMask = 0x00;
+uint8_t interrupt_lastState[6];
+uint8_t interrupt_subscribeMsgId[6];
+void interrupt_MainRoutine() {
+  for (uint8_t channelId = 0; channelId < 6; channelId++) {
+    if (!bitRead(interrupt_enableMask, channelId)) {
+      return;
+    }
+
+    uint8_t pinaData = digitalRead(pina[channelId]);
+    uint8_t pindData = digitalRead(pind[channelId]);
+    uint8_t state = (pinaData << 1) | pindData;
+    if (state != interrupt_lastState[channelId]) {
+      // send back the data
+      interrupt_lastState[channelId] = state;
+      result.clear();
+      result[0] = interrupt_subscribeMsgId[channelId];
+      result[1] = state;
+      serializeMsgPack(result, Serial);
+    }
+  }
+}
+
+enum CommandType {
+  // admin command
+  Cmd_FirmwareQuery = 0xfe,
+  Cmd_ResetPort = 0xfd,
+  // basic command
+  Cmd_ReadPort = 0x01,
+  Cmd_WritePort = 0x02,
+  // Cmd_PinModePort = 0x03,
+  // functional commands
+  Cmd_ServoControl = 0x04,
+  Cmd_AttachInterrupt = 0x05,
+  Cmd_AttachSchmittInterrupt = 0x06,
+  Cmd_PulseCounter = 0x07,
+  Cmd_ReadDHT = 0x08,
+  Cmd_ReadDS18B20 = 0x09,
+  Cmd_ReadUltrasonic = 0x0a,
+};
+
+// write a interrupt routine that will listen to serial port
+
+uint8_t serial_Buffer[64];
+uint8_t serial_Pointer = 0xff;      // 0xff mean no data, serial_Pointer must be withing serial_IncomingLength
+void handler_ProcessIncomingPackage();
+void routine_ReceiveData();
+void routine_Auditing();
+
+//* Start of code logic
+
+void _handle_WritePort() {
+  uint8_t port = packages[1];
+  uint8_t pinaData = packages[2];
+  uint8_t pindData = packages[3];
+  _writePort(port, 0, pinaData);
+  _writePort(port, 1, pindData);
+}
+
+void _handle_ResetPort() {
+  uint8_t port = packages[1];
+  pinMode(pina[port], INPUT);
+  pinMode(pind[port], INPUT);
+  // reset the channl funcion also
+  // TODO: is this a valid api ?
+}
+void _handle_ServoControl() {
+  /*
+    Servo will receive an uint8_t data
+    This data will be stored in channelParam1
+
+    the main routine (auditing) are responsible to create the pulses to control
+    the servo, so this function only need to store the data
+
+    and set the
+  */
+  uint8_t port = packages[1];
+  uint16_t pulseDuration = packages[2];
+}
+
+void _handle_ReadPort() {
+  /*
+    ReadPort will return digitalRead of 2 pin, and analogRead of pina
+    The 2 digital value are packed into 1 byte
+    The return value of analog is a float value, which will map 1023 range to 100 range
+
+  */
+  uint8_t port = packages[1];
+  uint8_t pinaData = digitalRead(pina[port]);
+  uint8_t pindData = digitalRead(pind[port]);
+  uint16_t analog = analogRead(pina[port]);
+  float analogData = map((float) analog, 0, 1023, 0, 100);
+
+  uint8_t digitalData = (pinaData << 1) | pindData;
+  result[1] = digitalData;
+  result[2] = analogData;
+}
+
+void routine_ReceiveData() {
+  /*
+    Receive the msgpack data as a bytes
+    There is no need for flow control
+    Read until no more data in Serial
+  */
+  while (Serial.available()) {
+    serial_Buffer[serial_Pointer++] = Serial.read();
+  }
+  serial_Pointer = 0;
+  handler_ProcessIncomingPackage();
+}
+void routine_Auditing() {
+  /*
+    Loop through each channel, perform non blocking action
+    - check if it is necessary to send data back based on updates
+
+
+  */
+}
+void handler_ProcessIncomingPackage() {
+  /*
+    Function will use the serial_Buffer to deserialize the msgpack formatted
+  */
+  // JsonObject& root = packages.parseObject(serial_Buffer);
+  DeserializationError error = deserializeMsgPack(packages, serial_Buffer);
+  if (error) {
+    Serial.print("deserializeMsgPack() failed: ");
+    return;
+  }
+
+  uint8_t msgId = packages[0];
+  uint8_t command = packages[1];
+  result.clear();
+  result[0] = msgId;
+
+  switch (command) {
+    case Cmd_FirmwareQuery :
+
+      break;
+    case Cmd_ResetPort :
+      _handle_ResetPort();
+      break;
+    case Cmd_ReadPort :
+      // ReadPort will return digitalRead of 2 pin, and analogRead of pina
+      _handle_ReadPort();
+      break;
+    case Cmd_WritePort :
+      _handle_WritePort();
+      break;
+    case Cmd_ServoControl :
+      _handle_ServoControl();
+
+      break;
+    case Cmd_AttachInterrupt :
+      break;
+    case Cmd_AttachSchmittInterrupt :
+      break;
+    case Cmd_PulseCounter :
+      break;
+    case Cmd_ReadDHT :
+      break;
+    case Cmd_ReadDS18B20 :
+      break;
+    case Cmd_ReadUltrasonic :
+      break;
+    default :
+      break;
+  }
+  // send back confirmation data
+  // packages.clear();
+  // we will send back package in place
+  // so there are chance that data written back is longer than the original data
+
+  serializeMsgPack(packages, Serial);
+}
+
+void setup() {
+  Serial.begin(115200);
+}
+void loop() {
+  routine_ReceiveData();
+  routine_Auditing();
+
+  // background routines
+  servo_MainRoutine();
+}

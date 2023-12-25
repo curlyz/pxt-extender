@@ -1,0 +1,88 @@
+#include <Arduino.h>
+#include <SoftwareSerial.h>
+
+const uint8_t rxd = PIN_PD3;
+const uint8_t txd = PIN_PD2;
+const uint8_t spwmen = PIN_PD4;
+const uint8_t rail12 = PIN_PC3;
+const uint8_t ifb = PIN_PC1;
+const uint8_t vfb = PIN_PC0;
+const uint8_t ledout = PIN_PB2;
+const uint8_t eg_enable = PIN_PC2;
+const uint8_t relay = PIN_PB0;
+
+SoftwareSerial egser(rxd, txd);
+
+void initPins() {
+  // pinMode(rxd, INPUT);
+  // pinMode(txd, OUTPUT);
+  // egser.begin(2400);
+
+  pinMode(spwmen, OUTPUT);
+  digitalWrite(spwmen, LOW);
+
+  pinMode(eg_enable, OUTPUT);
+  digitalWrite(eg_enable, HIGH);
+  pinMode(relay, OUTPUT);
+  digitalWrite(relay, HIGH);
+
+  pinMode(ledout, INPUT_PULLUP);
+  pinMode(rail12, INPUT);
+  pinMode(ifb, OUTPUT);      // no need for current protection
+  // pinMode(vfb, OUTPUT);
+}
+
+int measureVoltage() {
+  return analogRead(vfb);
+}
+int measureCurrent() {
+  return analogRead(ifb);
+}
+
+void setPower(bool enable) {
+  digitalWrite(eg_enable, enable);
+}
+
+void setEnable(bool enable) {
+  digitalWrite(spwmen, enable);
+}
+void setOutput(bool enable) {
+  digitalWrite(relay, enable);
+}
+
+void setup() {
+  delay(2000);
+  // put your setup code here, to run once:
+  Serial.begin(115200);
+  initPins();
+  setPower(true);
+  setPower(true);
+  setEnable(true);
+  // setOutput(true);
+}
+
+void loop() {
+  Serial.println(millis());
+  delay(1000);
+  // setPower(!digitalRead(eg_enable));
+  // delay(3000);
+  // put your main code here, to run repeatedly:
+  // setPower(!digitalRead(relay));
+  // egser.write((byte) 0x41);
+  // egser.write((byte) 0x00);
+  // // setEnable(!digitalRead(spwmen));
+
+  // delay(100);
+
+  // egser.write((byte) 0x84);
+  // egser.write((byte) 20);
+  // delay(100);
+
+  // egser.write((byte) 0x81);
+  // egser.write((byte) 0x55);
+  // delay(100);
+
+  // egser.write((byte) 0x83);
+  // egser.write((byte) 24);
+  // delay(1000);
+}
