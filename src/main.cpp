@@ -45,6 +45,7 @@ enum CommandType {
   Cmd_ReadDHT = 0x08,
   Cmd_ReadDS18B20 = 0x09,
   Cmd_ReadUltrasonic = 0x0a,
+
 };
 
 void Serial_HeadUp() {
