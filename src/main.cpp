@@ -15,18 +15,18 @@ const uint8_t pina[] = {
     PIN_PC5,
     PIN_PC4,
     PIN_PC3,
-    PIN_PC2,
-    PIN_PC1,
     PIN_PC0,
+    PIN_PC1,
+    PIN_PC2,
 };
 
 const uint8_t pind[] = {
     PIN_PD4,
     PIN_PD3,
     PIN_PD2,
-    PIN_PB0,
-    PIN_PD7,
     PIN_PD6,
+    PIN_PD7,
+    PIN_PB0,
 };
 
 enum CommandType {
@@ -76,6 +76,30 @@ void serial_ResponseBack() {
 
 void handle_FirmwareQuery() {
 }
+void handle_ReadUltrasonic() {
+  uint8_t channel = buffer[2];
+
+  uint8_t trigPin = pina[channel];
+  uint8_t echoPin = pind[channel];
+
+  pinMode(trigPin, OUTPUT);      // Sets the trigPin as an Output
+  pinMode(echoPin, INPUT);       // Sets the echoPin as an Input
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  // Sets the trigPin on HIGH state for 10 micro seconds
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(5);
+  digitalWrite(trigPin, LOW);
+  // Reads the echoPin, returns the sound wave travel time in microseconds
+  unsigned long duration = pulseIn(echoPin, HIGH, 200000);
+  int distance = int(duration / 2 / 29.412) * 10;  // return mm
+
+  // Calculating the distance
+  buffer[1] = distance >> 8;
+  buffer[2] = distance & 0xff;
+  bufferReturnLength = 3;
+}
+
 void handle_ReadPort() {
   /*
       Read the digitalRead of pina and pind of the channel
@@ -389,10 +413,6 @@ void handle_ReadDHT() {
   bufferReturnLength = 2;
 }
 void handle_ReadDS18B20() {
-  buffer[1] = 0xff;      // not supported
-  bufferReturnLength = 2;
-}
-void handle_ReadUltrasonic() {
   buffer[1] = 0xff;      // not supported
   bufferReturnLength = 2;
 }
